@@ -8,6 +8,11 @@ import (
 	"strings"
 
 	"github.com/csothen/kognit/pkg/compress"
+	"github.com/spf13/cobra"
+)
+
+var (
+	algorithm string
 )
 
 const (
@@ -17,9 +22,31 @@ const (
 	huffman = "Huffman"
 )
 
+// compCmd represents the comp command
+var compressCmd = &cobra.Command{
+	Use:   "compress",
+	Short: "Compresses a file using an algorithm of choice",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		var filePath string = args[0]
+		err := compressFile(filePath, algorithm)
+
+		if err != nil {
+			log.Fatal(err)
+			fmt.Println(err)
+		}
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(compressCmd)
+
+	compressCmd.Flags().StringVarP(&algorithm, "algorithm", "a", "huffman", "Define the algorithm that will be used to compress the file, by default it will use the Huffman coding algorithm")
+}
+
 // Compress handles the compression of files making calls to different
 // compression algorithms
-func Compress(filePath string, algorithm string) error {
+func compressFile(filePath string, algorithm string) error {
 
 	// Read file content and check if the reading didn't fail
 	fileContent, rErr := ioutil.ReadFile(filePath)
@@ -48,10 +75,12 @@ func Compress(filePath string, algorithm string) error {
 		// Compress the file using the RLE compression algorithm
 		compressedData, cErr = compress.RLE(fileContent)
 		break
-	default:
+	case huffman:
 		// Compress the file using the Huffman compression algorithm
 		compressedData, cErr = compress.Huffman(fileContent)
 		break
+	default:
+		return fmt.Errorf("Invalid algorithm chosen")
 	}
 
 	if cErr != nil {
@@ -69,7 +98,7 @@ func Compress(filePath string, algorithm string) error {
 	// Location of the new compressed file
 	newFile := path.Join(location, name)
 
-	err := ioutil.WriteFile(newFile, compressedData, 6666)
+	err := ioutil.WriteFile(newFile, compressedData, 0666)
 
 	if err != nil {
 		log.Fatal(err)

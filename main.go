@@ -1,5 +1,5 @@
 /*
-Copyright © 2020 César Pinheiro cesarjcpinheiro@gmail.com
+Copyright © 2020 NAME HERE <EMAIL ADDRESS>
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -15,10 +15,8 @@ limitations under the License.
 */
 package main
 
-import (
-	"fmt"
-)
+import "kognit/cmd"
 
 func main() {
-	fmt.Println("Kognit")
+	cmd.Execute()
 }
