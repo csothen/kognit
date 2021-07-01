@@ -15,6 +15,7 @@ type CompressionAlgorithm interface {
 
 const (
 	Flate FileCompressionAlgorithm = iota
+	Deflate
 	Gzip
 	Huffman
 	LZW
@@ -25,6 +26,8 @@ func (a FileCompressionAlgorithm) Encode(dataPath string) error {
 	switch a {
 	case Flate:
 		fmt.Println("File encoding using Flate")
+	case Deflate:
+		fmt.Println("File encoding using Deflate")
 	case Gzip:
 		fmt.Println("File encoding using Gzip")
 	case Huffman:
@@ -41,6 +44,8 @@ func (a FileCompressionAlgorithm) Decode(dataPath string) error {
 	switch a {
 	case Flate:
 		fmt.Println("File decoding using Flate")
+	case Deflate:
+		fmt.Println("File decoding using Deflate")
 	case Gzip:
 		fmt.Println("File decoding using Gzip")
 	case Huffman:
