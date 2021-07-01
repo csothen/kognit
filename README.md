@@ -1,6 +1,6 @@
 # Kognit
 
-Kognit is a tool developed for the sake of self development regarding file compression and the Go programming languuage.
+Kognit is a tool developed for the sake of self development regarding file compression and the Go programming language.
 
 ## Features
 
@@ -38,6 +38,11 @@ func main(){
     // Will encode the directory into a zip file
     if err := kognit.ZIP.Encode("myDir"); err != nil {
         panic(err)
+    }
+
+    // Will decode the zip file
+    if err := kognit.ZIP.Decode("myDir.zip"); err != nil {
+      panic(err)
     }
 }
 ```
