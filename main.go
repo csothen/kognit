@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type ItemType int
@@ -17,8 +18,8 @@ type FileCompressionAlgorithm int
 type ImageCompressionAlgorithm int
 
 type CompressionAlgorithm interface {
-	Encode(dataPath string) error
-	Decode(dataPath string) error
+	Encode(src string) error
+	Decode(src string) error
 }
 
 const (
@@ -32,39 +33,37 @@ const (
 	TAR
 )
 
-func (a DirectoryCompressionAlgorithm) Encode(dataPath string) error {
-	output := dataPath
+func (a DirectoryCompressionAlgorithm) Encode(src string) error {
+	dest := src
 
 	switch a {
 	case ZIP:
-		output += ".zip"
-		if err := encodeZipArchive(dataPath, output); err != nil {
+		dest += ".zip"
+		if err := encodeZipArchive(src, dest); err != nil {
 			return err
 		}
 	case TAR:
-		output += ".tar"
-		if err := encodeTarArchive(dataPath, output); err != nil {
+		dest += ".tar.gz"
+		if err := encodeTarArchive(src, dest); err != nil {
 			return err
 		}
-	default:
-		return errors.New("Compression algorithm does not exist")
 	}
 	return nil
 }
 
-func encodeZipArchive(dataPath, output string) error {
-	files, err := allDirFiles(dataPath)
+func encodeZipArchive(src, dest string) error {
+	files, err := allDirFiles(src)
 	if err != nil {
 		return err
 	}
 
-	zipFile, err := os.Create(output)
+	f, err := os.Create(dest)
 	if err != nil {
 		return err
 	}
-	defer zipFile.Close()
+	defer f.Close()
 
-	zipWriter := zip.NewWriter(zipFile)
+	zipWriter := zip.NewWriter(f)
 	defer zipWriter.Close()
 
 	for _, file := range files {
@@ -104,13 +103,13 @@ func addToZip(w *zip.Writer, filename string) error {
 	return err
 }
 
-func encodeTarArchive(dataPath, output string) error {
-	files, err := allDirFiles(dataPath)
+func encodeTarArchive(src, dest string) error {
+	files, err := allDirFiles(src)
 	if err != nil {
 		return nil
 	}
 
-	tarFile, err := os.Create(output)
+	tarFile, err := os.Create(dest)
 	if err != nil {
 		return err
 	}
@@ -157,10 +156,10 @@ func addToTar(w *tar.Writer, filename string) error {
 	return err
 }
 
-func allDirFiles(dirPath string) ([]string, error) {
+func allDirFiles(src string) ([]string, error) {
 	files := []string{}
 
-	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -173,12 +172,124 @@ func allDirFiles(dirPath string) ([]string, error) {
 	return files, err
 }
 
-func (a DirectoryCompressionAlgorithm) Decode(dataPath string) error {
+func (a DirectoryCompressionAlgorithm) Decode(src string) error {
+	dest := filepath.Dir(src)
 	switch a {
 	case ZIP:
+		if err := decodeZipArchive(src, dest); err != nil {
+			return err
+		}
 	case TAR:
+		if err := decodeTarArchive(src, dest); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func decodeZipArchive(src, dest string) error {
+	r, err := zip.OpenReader(src)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+
+	os.MkdirAll(dest, 0755)
+
+	for _, f := range r.File {
+		err := extractFromZip(f, dest)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func extractFromZip(f *zip.File, dest string) error {
+	file, err := f.Open()
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	path := filepath.Join(dest, f.Name)
+
+	if !strings.HasPrefix(path, filepath.Clean(dest)+string(os.PathSeparator)) {
+		return fmt.Errorf("illegal file path: %s", path)
+	}
+
+	if f.FileInfo().IsDir() {
+		os.MkdirAll(path, f.Mode())
+	} else {
+		os.MkdirAll(filepath.Dir(path), f.Mode())
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		_, err = io.Copy(f, file)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func decodeTarArchive(src, dest string) error {
+	stream, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer stream.Close()
+
+	gzipReader, err := gzip.NewReader(stream)
+	if err != nil {
+		return err
+	}
+	defer gzipReader.Close()
+
+	r := tar.NewReader(gzipReader)
+
+	for true {
+		header, err := r.Next()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+
+		err = extractFromTar(r, header, dest)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func extractFromTar(r *tar.Reader, header *tar.Header, dest string) error {
+	switch header.Typeflag {
+	case tar.TypeDir:
+		if err := os.Mkdir(header.Name, 0755); err != nil {
+			return err
+		}
+	case tar.TypeReg:
+		outFile, err := os.Create(header.Name)
+		if err != nil {
+			return err
+		}
+
+		if _, err := io.Copy(outFile, r); err != nil {
+			return err
+		}
+		outFile.Close()
+
 	default:
-		return errors.New("Compression algorithm does not exist")
+		return errors.New("Unknown header type")
 	}
 	return nil
 }
@@ -203,8 +314,6 @@ func (a FileCompressionAlgorithm) Encode(dataPath string) error {
 		fmt.Println("File encoding using LZW")
 	case RLE:
 		fmt.Println("File encoding using RLE")
-	default:
-		return errors.New("Compression algorithm does not exist")
 	}
 	return nil
 }
@@ -221,8 +330,6 @@ func (a FileCompressionAlgorithm) Decode(dataPath string) error {
 		fmt.Println("File decoding using LZW")
 	case RLE:
 		fmt.Println("File decoding using RLE")
-	default:
-		return errors.New("Compression algorithm does not exist")
 	}
 	return nil
 }
@@ -244,8 +351,6 @@ func (a ImageCompressionAlgorithm) Encode(dataPath string) error {
 		fmt.Println("File encoding using PNG")
 	case GIF:
 		fmt.Println("File encoding using GIF")
-	default:
-		return errors.New("Compression algorithm does not exist")
 	}
 	return nil
 }
@@ -260,8 +365,6 @@ func (a ImageCompressionAlgorithm) Decode(dataPath string) error {
 		fmt.Println("File decoding using PNG")
 	case GIF:
 		fmt.Println("File decoding using GIF")
-	default:
-		return errors.New("Compression algorithm does not exist")
 	}
 	return nil
 }
